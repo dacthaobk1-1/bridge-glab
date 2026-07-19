@@ -1,0 +1,10 @@
+{
+  "name": "flow-forward",
+  "version": "1.0.0",
+  "description": "Proxy server for image generation API via Cloudflare Tunnel",
+  "main": "flow_foward.js",
+  "scripts": {
+    "start": "node flow_foward.js",
+    "tunnel": "cloudflared tunnel run flow-forward"
+  }
+}

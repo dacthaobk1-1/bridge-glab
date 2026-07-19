@@ -1,0 +1,7 @@
+tunnel: fb09bb6e-aaa7-4ba1-bff4-fac1ffb2b204
+credentials-file: C:\Users\Admin\.cloudflared\fb09bb6e-aaa7-4ba1-bff4-fac1ffb2b204.json
+
+ingress:
+  - hostname: bridge.topconsumerrank.com
+    service: http://localhost:3456
+  - service: http_status:404
