@@ -34,20 +34,6 @@ localhost:8765  ← Image Generation API (service khác, không thuộc project 
 
 ---
 
-## Thông tin kết nối
-
-| Key | Value |
-|-----|-------|
-| **Public URL** | `https://bridge.topconsumerrank.com` |
-| **API Key** | `gSrFqVLkEzXmwTSkyjTWlre6eiKWalIyeOLxJwJ6llU` |
-| **Tunnel ID** | `fb09bb6e-aaa7-4ba1-bff4-fac1ffb2b204` |
-| **Proxy Port** | `3456` |
-| **Image API Port** | `8765` |
-
-> API Key đã được proxy tự inject vào mỗi request, client bên ngoài **không cần gửi key**.
-
----
-
 ## Cài đặt trên máy mới
 
 ### Bước 1: Cài Node.js
