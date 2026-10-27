@@ -1,0 +1,15 @@
+node_modules/
+.work/
+logs/
+*.log
+*.db
+*.db-shm
+*.db-wal
+.env*
+*.pem
+.playwright-mcp/
+.agents/
+extracted_style/
+*.png
+*.jpg
+.DS_Store

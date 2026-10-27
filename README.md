@@ -346,3 +346,52 @@ flow_foward/
 - `test_image.jpg` — file test
 - `node_modules/` — không có gì ở đây
 "# bridge-glab" 
+
+---
+
+## Gateway v2: batch video, tracking & trace logs
+
+### Cơ chế mới
+| Vấn đề cũ | Cách xử lý |
+|---|---|
+| Failover nhảy qua lại giữa 2 node đều chết, không cứu được task | Health check + circuit breaker: node `down` không nhận việc, tự `up` lại khi backend sống. Khi không còn node nào sống, request **chờ/retry** (tối đa 60s với client, 15 phút với batch) thay vì fail ngay |
+| Retry POST làm trùng job | POST chỉ retry khi chắc chắn chưa tới backend (`ECONNREFUSED`...). Lỗi sau khi đã gửi trả `502 upstream_failed` + `may_have_been_processed:true` |
+| Gửi nhiều video cùng lúc làm backend quá tải | Hàng đợi submit theo loại (`VIDEO_SUBMIT_CONCURRENCY`=2, `IMAGE_SUBMIT_CONCURRENCY`=4, tùy chọn `VIDEO_SUBMIT_GAP_MS`, `VIDEO_MAX_ACTIVE`) |
+| Poll 404 sau khi backend restart bị tính là lỗi bridge | Task gắn với backend sở hữu; 404 từ đúng backend đó => `lost` kèm giải thích |
+| Không biết vì sao task fail | Bridge tự poll nền mọi task chưa xong (20s/lần) và lưu **body lỗi của backend** vào DB, kể cả khi client ngừng poll |
+| `gateway.db` 1.2 GB, đầy ổ | Không lưu base64/chuỗi dài (cắt ở 2000 ký tự), không lưu mỗi lần poll `running`, WAL, trace nén gzip sau 1 ngày, cảnh báo ổ đĩa < 1 GB |
+
+### Batch video
+```bash
+curl -X POST https://bridge.topconsumerrank.com/api/batch/video/generate \
+  -H "Content-Type: application/json" \
+  -d '{"defaults":{"model":"omni_flash"},
+       "requests":[{"prompt":"cảnh 1"},{"prompt":"cảnh 2"}]}'
+# -> 202 {"batch_id":"b_1a2b3c4d5e","total":2,"status_url":"/api/batch/b_1a2b3c4d5e"}
+
+curl https://bridge.topconsumerrank.com/api/batch/b_1a2b3c4d5e            # đầy đủ
+curl "https://bridge.topconsumerrank.com/api/batch/b_1a2b3c4d5e?compact=1&only=failed"
+```
+Tối đa 500 item/batch (`BATCH_MAX_ITEMS`). `/api/batch/image/generate` hoạt động tương tự. Mỗi item có `index`, `task_id`, `state`
+(`queued | pending | running | completed | failed | lost | abandoned | submit_failed`), `error`, `request_id`; `done:true` khi mọi item đã kết thúc.
+Kết quả của item `completed` nằm trong `result`. API cũ (`/api/video/generate` + `/api/status/:id`) vẫn dùng bình thường và cũng đi qua hàng đợi.
+
+### Truy vết lỗi
+Mọi response có header `X-Request-Id`. Lỗi do bridge trả JSON `{error, detail, request_id, attempts, retryable}`.
+```bash
+curl "http://localhost:3456/api/admin/trace?task_id=87dade1e"     # task + các request + toàn bộ trace
+curl "http://localhost:3456/api/admin/trace?request_id=req_ab12"
+curl "http://localhost:3456/api/admin/trace?batch_id=b_1a2b3c4d5e"
+curl "http://localhost:3456/api/admin/tasks?status=failed&limit=50"
+curl "http://localhost:3456/health?deep=1"                           # trạng thái backend, hàng đợi (503 nếu không có backend sống)
+```
+Nơi lưu log: `logs/YYYY-MM-DD.access.log`, `.err.log` (text), `logs/trace/YYYY-MM-DD.jsonl[.gz]` (từng lần gọi backend, request/response đã cắt gọn,
+lỗi lưu tối đa 16 KB), và SQLite `logs/gateway.db` (bảng `requests`, `tasks`, `batch_items`).
+Dashboard hiện "TASK FAILED" + lỗi thật trong cửa sổ Params.
+
+### Biến môi trường (tùy chọn)
+`PORT`, `API_KEY`, `PUBLIC_URL`, `BACKENDS_JSON`, `UPSTREAM_TIMEOUT_MS`(120000), `VIDEO_SUBMIT_CONCURRENCY`, `VIDEO_SUBMIT_GAP_MS`,
+`VIDEO_MAX_ACTIVE` (0 = không giới hạn số task đang chạy), `TRACK_INTERVAL_MS`, `TRACK_MAX_AGE_MS`, `MIN_FREE_DISK_MB`, `LOG_DIR`, `DB_PATH`.
+
+### Thu nhỏ DB cũ (một lần)
+Dừng gateway rồi chạy `node scripts/compact-db.js` (1.2 GB -> ~20 MB).
